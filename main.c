@@ -1,11 +1,24 @@
 #include <stdio.h>
 #include <signal.h>
 #include <stdlib.h>
+#include <unistd.h>
+#include <sys/wait.h>
 
-int running = 1;
 
 void handler(){
-    printf("I don't want to quit\n");
+    pid_t pid =fork();
+
+    if(pid==0){
+        printf("\nI don't want to quit\n");
+        exit(0);
+    }
+    else if(pid<0){
+        perror("fork error");
+        exit(1);
+    }
+    else{
+        wait(NULL);
+    }
 }
 
 //int c, char *argv[]
