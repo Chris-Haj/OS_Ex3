@@ -12,8 +12,7 @@
 #define CD_LENGTH strlen(CD)
 #define EXIT_LENGTH strlen(EXIT)
 #define HISTORY_LENGTH strlen(HISTORY)
-#define WRITE_END 1
-#define READ_END 0
+
 
 #define PATH_LENGTH 100
 
@@ -21,26 +20,64 @@ void loop();
 
 void checkInput(FILE *file, char *input, size_t i, int fromHistory);
 
-int wordCounter(const char *line, size_t i);
+void counter(const char *line, size_t i);
 
-void executeCommand(char *argv[], char *line, size_t size);
+void executeCommands(char *argv[], char *line, size_t size);
 
 void readHistory(FILE *file);
-
-void sendToPipe(char *in[], char *cmdout[]);
 
 void cmdFromHistory(char *line);
 
 int numberOfCommands = 1;
-
+int numberOfPipes=0;
 int totalNumberOfWords = 0;
 int running = 1;
 
 int main() {
 //    loop();
-    char *in[] = {"ls", "-l", NULL};
-    char *out[] = {"wc", "-l", NULL};
-    sendToPipe(in, out);
+
+    char *test[]={"basd","-l",NULL};
+    int commands=1;
+    int fd[2];
+    int num=0;
+    pipe(fd);
+    pid_t pid=fork();
+    if(pid==0){
+        close(fd[0]);
+        int random= execvp(*test,test);
+        dup2(fd[1],1);
+        printf("%d",random);
+        close(fd[1]);
+        exit(0);
+    }else{
+        if(commands >1){
+            pid = fork();
+            if(pid == 0) {
+                close(fd[1]);
+                dup2(fd[0], 0);
+                int failed;
+                scanf("%d", &failed);
+                if (failed == -1) {
+                    printf("cmd not found!\n");
+                    exit(1);
+                }
+                close(fd[0]);
+            }
+
+
+
+        }
+        else{
+            close(fd[1]);
+            dup2(fd[0],0);
+            int failed;
+            scanf("%d",&failed);
+            if(failed == -1)
+                printf("cmd not found!\n");
+            close(fd[0]);
+        }
+    }
+
     return 0;
 }
 
@@ -90,8 +127,8 @@ void loop() {
 /*
  * checkInput is used to check what kind of command/input was passed through.
  * If one of the commands (done/history/cd) were entered with no other words then the program either terminates/prints out all previously entered commands, or a cd error
- * If the input wasn't any of said commands, then the program will treat the input as a shell command and create an array of pointers of returned size from wordCounter+1 and this array
- * is sent to the executeCommand function.
+ * If the input wasn't any of said commands, then the program will treat the input as a shell command and create an array of pointers of returned size from counter+1 and this array
+ * is sent to the executeCommands function.
 */
 void checkInput(FILE *file, char *input, size_t i, int fromHistory) {
     if (strncmp(input, EXIT, EXIT_LENGTH) == 0 && input[EXIT_LENGTH] == '\n') {
@@ -107,15 +144,46 @@ void checkInput(FILE *file, char *input, size_t i, int fromHistory) {
         return;
     } else if (strncmp(&input[i], CD, CD_LENGTH) == 0 && (input[CD_LENGTH] == ' ' || input[CD_LENGTH] == '\n')) {
         fprintf(stderr, "Command not supported yet!\n");
-        wordCounter(input, i);
+        counter(input, i);
         return;
     } else {
-        int argc = wordCounter(input, i);
-        char *argv[argc + 1];
-        argv[argc] = NULL;
-        executeCommand(argv, input, argc);
+        counter(input, i);
     }
     fromHistory == 0 ? fprintf(file, "%s", input) : fprintf(file, "%s\n", input);
+}
+
+/*
+ * the counter function is used to count how many words are in the input and add it to the total
+ * number of words entered and incrementing total number of commands by 1.
+ */
+
+void counter(const char *line, size_t i) {
+    int wordsAmount[3] = {1,1,1};
+    int pipeIdx[2] = {-1,-1};
+    int curPipe = 0;
+    int j=0;
+    while (line[i] != '\n') {
+        if (line[i] == '|'){
+            pipeIdx[curPipe++] = (int) i;
+            j++;
+            while (line[i + 1] == ' ')
+                i++;
+        }
+        else if (line[i] == ' ') {
+            while (line[i + 1] == ' ')
+                i++;
+            if(line[i+1]!='|' && line[i+1]!='\n')
+                wordsAmount[j]++;
+        }
+        i++;
+    }
+    numberOfPipes+=curPipe;
+    numberOfCommands++;
+    for(int c = 0;c<curPipe+1;c++)
+        totalNumberOfWords += wordsAmount[c];
+
+
+
 }
 
 /*
@@ -139,26 +207,6 @@ void cmdFromHistory(char *line) {
     fclose(file);
 }
 
-/*
- * the wordCounter function is used to count how many words are in the input and add it to the total
- * number of words entered and incrementing total number of commands by 1.
- */
-
-int wordCounter(const char *line, size_t i) {
-    int wordAmount = 1;
-    while (line[i] != '\n') {
-        if (line[i] == ' ') {
-            while (line[i + 1] == ' ')
-                i++;
-            wordAmount++;
-        }
-        i++;
-    }
-    numberOfCommands++;
-    totalNumberOfWords += wordAmount;
-    return wordAmount;
-}
-
 
 //the readHistory function is simple function used to reopen the file in read mode and pass through all lines in the file while printing them to the terminal.
 void readHistory(FILE *file) {
@@ -175,7 +223,7 @@ void readHistory(FILE *file) {
 /*After receiving the array of pointers, this function goes through the input again,
  * while placing each word in a separate index
 */
-void executeCommand(char *argv[], char *line, size_t size) {
+void executeCommands(char *argv[], char *line, size_t size) {
     int start = 0, end = 0, index = 0;
     for (int i = 0; line[i] != '\n'; i++) {
         if (start > end)
@@ -224,24 +272,24 @@ void sendToPipe(char *in[], char *out[]) {
     pid = fork();
 
     if (pid == 0) {
-        dup2(fd[WRITE_END], STDOUT_FILENO);
-        close(fd[READ_END]);
-        close(fd[WRITE_END]);
+        dup2(fd[1], STDOUT_FILENO);
+        close(fd[0]);
+        close(fd[1]);
         execvp(in[0], in);
         exit(1);
     } else {
         pid = fork();
 
         if (pid == 0) {
-            dup2(fd[READ_END], STDIN_FILENO);
-            close(fd[WRITE_END]);
-            close(fd[READ_END]);
+            dup2(fd[0], STDIN_FILENO);
+            close(fd[1]);
+            close(fd[0]);
             execvp(out[0], out);
             exit(1);
         } else {
             int status;
-            close(fd[READ_END]);
-            close(fd[WRITE_END]);
+            close(fd[0]);
+            close(fd[1]);
             waitpid(pid, &status, 0);
         }
     }
