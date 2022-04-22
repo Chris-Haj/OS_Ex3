@@ -38,8 +38,8 @@ int running = 1;
 int main() {
 //    loop();
 
-    char *test[] = {"dass", "-l", NULL};
-    char *other[] = {"dasd","-l",NULL};
+    char *test[] = {"ls", "-l", NULL};
+    char *other[] = {"sort",NULL};
     executeTwoCmds(test,other);
 //    executeOneCmd(test);
 
@@ -278,7 +278,10 @@ void executeTwoCmds(char *cmd[], char *cmd2[]){
         printf("%d", commandStatus);
         close(fd[1]);
         exit(0);
-    }
+    }// fd[0] second child reads from first child
+    //  fd[1] first child writes to second child
+    //  fd[2] father reads from second child
+    //  fd[3] second child writes to father
     else{ // father
         pid = fork();//create second child
         if(pid == 0){//second child (takes input from first child and sends to father
@@ -294,24 +297,24 @@ void executeTwoCmds(char *cmd[], char *cmd2[]){
             }
             dup2(fd[3],1);
             commandStatus = execvp(*cmd2,cmd2);
+            printf("%d",commandStatus);
             close(fd[2]);
             close(fd[3]);
             exit(1);
         }
+        close(fd[0]);
+        close(fd[1]);
+        int stat;
+        dup2(fd[2],0);
+        scanf("%d",&stat);
+        if(stat == -1)
+            fprintf(stderr,"second command is unknown");
+        close(fd[2]);
+        close(fd[3]);
+       /* for(int i=0;i<2;i++)
+            wait(&status);*/
+        exit(0);
     }
-    close(fd[0]);
-    close(fd[1]);
-    dup2(fd[2],0);
-    int stat;
-    scanf("%d ",&stat);
-    if(stat == -1)
-        fprintf(stderr,"second command is unknown");
-    close(fd[2]);
-    close(fd[3]);
-    for(int i=0;i< pipes;i++)
-        close(fd[i]);
-    for(int i=0;i<3;i++)
-        wait(&status);
 }
 void executeThreeCmds(char *cmd[], char *cmd2[], char *cmd3[]){
     int fd[6];
