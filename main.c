@@ -22,61 +22,26 @@ void checkInput(FILE *file, char *input, size_t i, int fromHistory);
 
 void counter(const char *line, size_t i);
 
-void executeCommands(char *argv[], char *line, size_t size);
-
 void readHistory(FILE *file);
 
 void cmdFromHistory(char *line);
+void cmdSplitter(const char *line, int pipeAmount, int *wordsAmount, const int *pipeIndexes);
+void executeOneCmd(char *cmd[]);
+void executeTwoCmds(char *cmd[], char *cmd2[]);
+void executeThreeCmds(char *cmd[], char *cmd2[], char *cmd3[]);
 
 int numberOfCommands = 1;
-int numberOfPipes=0;
+int numberOfPipes = 0;
 int totalNumberOfWords = 0;
 int running = 1;
 
 int main() {
 //    loop();
 
-    char *test[]={"basd","-l",NULL};
-    int commands=1;
-    int fd[2];
-    int num=0;
-    pipe(fd);
-    pid_t pid=fork();
-    if(pid==0){
-        close(fd[0]);
-        int random= execvp(*test,test);
-        dup2(fd[1],1);
-        printf("%d",random);
-        close(fd[1]);
-        exit(0);
-    }else{
-        if(commands >1){
-            pid = fork();
-            if(pid == 0) {
-                close(fd[1]);
-                dup2(fd[0], 0);
-                int failed;
-                scanf("%d", &failed);
-                if (failed == -1) {
-                    printf("cmd not found!\n");
-                    exit(1);
-                }
-                close(fd[0]);
-            }
-
-
-
-        }
-        else{
-            close(fd[1]);
-            dup2(fd[0],0);
-            int failed;
-            scanf("%d",&failed);
-            if(failed == -1)
-                printf("cmd not found!\n");
-            close(fd[0]);
-        }
-    }
+    char *test[] = {"dass", "-l", NULL};
+    char *other[] = {"dasd","-l",NULL};
+    executeTwoCmds(test,other);
+//    executeOneCmd(test);
 
     return 0;
 }
@@ -158,32 +123,29 @@ void checkInput(FILE *file, char *input, size_t i, int fromHistory) {
  */
 
 void counter(const char *line, size_t i) {
-    int wordsAmount[3] = {1,1,1};
-    int pipeIdx[2] = {-1,-1};
+    int wordsAmount[3] = {1, 1, 1};
+    int pipeIdx[2] = {-1, -1};
     int curPipe = 0;
-    int j=0;
+    int j = 0;
     while (line[i] != '\n') {
-        if (line[i] == '|'){
+        if (line[i] == '|') {
             pipeIdx[curPipe++] = (int) i;
             j++;
             while (line[i + 1] == ' ')
                 i++;
-        }
-        else if (line[i] == ' ') {
+        } else if (line[i] == ' ') {
             while (line[i + 1] == ' ')
                 i++;
-            if(line[i+1]!='|' && line[i+1]!='\n')
+            if (line[i + 1] != '|' && line[i + 1] != '\n')
                 wordsAmount[j]++;
         }
         i++;
     }
-    numberOfPipes+=curPipe;
+    numberOfPipes += curPipe;
     numberOfCommands++;
-    for(int c = 0;c<curPipe+1;c++)
+    for (int c = 0; c < curPipe + 1; c++)
         totalNumberOfWords += wordsAmount[c];
-
-
-
+    cmdSplitter(line,curPipe,wordsAmount,pipeIdx);
 }
 
 /*
@@ -220,77 +182,139 @@ void readHistory(FILE *file) {
         fprintf(stderr, "Error receiving file from function");
 }
 
-/*After receiving the array of pointers, this function goes through the input again,
- * while placing each word in a separate index
-*/
-void executeCommands(char *argv[], char *line, size_t size) {
-    int start = 0, end = 0, index = 0;
-    for (int i = 0; line[i] != '\n'; i++) {
-        if (start > end)
-            end = i = start;
-        if (line[i] == ' ' || line[i + 1] == '\n') {
-            end = i;
-            if (line[i + 1] == '\n')
-                end++;
-            int CurWordSize = (end - start) + 1;
-            argv[index] = (char *) calloc(CurWordSize, sizeof(char));
-            if (!argv[index]) {
-                fprintf(stderr, "Error allocating memory!\n");
-            }
-            strncpy(argv[index], &line[start], end - start);
-            start = end + 1;
-            while (line[start] == ' ') start++;
-            if (line[start] == '\n')
-                break;
-            index++;
-        }
-    }
 /*
 * after setting up the argv array the fork function is called and the array is sent to the execvp function in the child program, which processes the array as
 * if the input was entered in a linux shell
 */
-    pid_t child = fork();
-    if (child < 0) {
-        perror("fork error");
-    }
-    if (child == 0) {
-        if (execvp(argv[0], argv) == -1) {
-            perror("execvp error");
-        }
-        exit(1);
-    }
-    wait(NULL);
-    for (int i = 0; i < size; i++)
-        free(argv[i]);
-}
 
-void sendToPipe(char *in[], char *out[]) {
-    pid_t pid;
+void cmdSplitter(const char *line, int pipeAmount, int *wordsAmount, const int *pipeIndexes) {
+    int i = 0;
+    int start = 0, end = 0, index = 0;
+    int cmdAmount = pipeAmount + 1;
+    char **commands[cmdAmount];
+    for (; i < cmdAmount; i++) {
+        commands[i] = (char **) calloc(wordsAmount[i]+1, sizeof(char **));
+        commands[i][wordsAmount[i]]=NULL;
+    }
+    i = 0;
+    for (int c = 0; c < cmdAmount; c++) {
+        for (; line[i] != '\n' && line[i] != '|'; i++) {
+            if (start > end)
+                end = i = start;
+            if (line[i] == ' ' || line[i + 1] == '\n' || line[i + 1] == '|') {
+                end = i;
+                if (line[i + 1] == '\n' || line[i + 1] == '|')
+                    end++;
+                int CurWordSize = (end - start) + 1;
+                commands[c][index] = (char *) calloc(CurWordSize, sizeof(char));
+                if (!commands[c][index]) {
+                    fprintf(stderr, "Error allocating memory!\n");
+                }
+                strncpy(commands[c][index], &line[start], end - start);
+                start = end + 1;
+                while (line[start] == ' ') start++;
+
+                if (line[start] == '\n' || line[start] == '|') {
+                    break;
+                }
+                index++;
+            }
+        }
+        if (c < pipeAmount)
+            i = pipeIndexes[c]+1;
+        index = 0;
+    }
+    if(cmdAmount==1)
+        executeOneCmd(commands[0]);
+    else if(cmdAmount==2)
+        executeTwoCmds(commands[0],commands[1]);
+    else
+        executeThreeCmds(commands[0],commands[1],commands[2]);
+    for (i = 0; i < cmdAmount; i++) {
+        for(int j = 0 ;j < wordsAmount[i]+1;j++){
+            free(commands[i][j]);
+        }
+        free(commands[i]);
+    }
+}
+void executeOneCmd(char *cmd[]){
     int fd[2];
-
     pipe(fd);
-    pid = fork();
-
+    pid_t pid = fork();
+    int commandStatus;
     if (pid == 0) {
-        dup2(fd[1], STDOUT_FILENO);
         close(fd[0]);
+        commandStatus = execvp(*cmd, cmd);
+        dup2(fd[1], 1);
+        printf("%d", commandStatus);
         close(fd[1]);
-        execvp(in[0], in);
-        exit(1);
-    } else {
-        pid = fork();
+        exit(0);
+    }
+    else {
+        close(fd[1]);
+        dup2(fd[0], 0);
+        int failed;
+        scanf("%d", &failed);
+        if (failed == -1)
+            fprintf(stderr,"cmd not found!\n");
+        close(fd[0]);
+    }
 
-        if (pid == 0) {
-            dup2(fd[0], STDIN_FILENO);
+}
+void executeTwoCmds(char *cmd[], char *cmd2[]){
+    int pipes = 4;
+    int fd[pipes];
+    pipe(fd);
+    pipe(fd+2);
+    pid_t pid = fork();
+    int status;
+    int commandStatus;
+    if(pid == 0){//first child (does first cmd and sends to child two)
+        close(fd[0]);
+        close(fd[2]);
+        close(fd[3]);
+        commandStatus = execvp(*cmd, cmd);
+        dup2(fd[1], 1);
+        printf("%d", commandStatus);
+        close(fd[1]);
+        exit(0);
+    }
+    else{ // father
+        pid = fork();//create second child
+        if(pid == 0){//second child (takes input from first child and sends to father
             close(fd[1]);
+            dup2(fd[0],0);
+            int stat;
+            scanf("%d",&stat);
             close(fd[0]);
-            execvp(out[0], out);
+            if(stat == -1){
+                fprintf(stderr,"first command is unknown!\n");
+                close(fd[3]);
+                close(fd[2]);
+            }
+            dup2(fd[3],1);
+            commandStatus = execvp(*cmd2,cmd2);
+            close(fd[2]);
+            close(fd[3]);
             exit(1);
-        } else {
-            int status;
-            close(fd[0]);
-            close(fd[1]);
-            waitpid(pid, &status, 0);
         }
     }
+    close(fd[0]);
+    close(fd[1]);
+    dup2(fd[2],0);
+    int stat;
+    scanf("%d ",&stat);
+    if(stat == -1)
+        fprintf(stderr,"second command is unknown");
+    close(fd[2]);
+    close(fd[3]);
+    for(int i=0;i< pipes;i++)
+        close(fd[i]);
+    for(int i=0;i<3;i++)
+        wait(&status);
 }
+void executeThreeCmds(char *cmd[], char *cmd2[], char *cmd3[]){
+    int fd[6];
+
+}
+
