@@ -172,8 +172,8 @@ void executeThreeCmds(char *cmd[], char *cmd2[], char *cmd3[]) {
             close(fd[3]);
             exit(1);
         } else if (pid == 0) {
-            dup2(fd[0], 0);
-            dup2(fd[3], 1);
+            dup2(fd[0], STDIN_FILENO);
+            dup2(fd[3], STDOUT_FILENO);
             close(fd[0]);
             close(fd[1]);
             close(fd[2]);
@@ -190,12 +190,13 @@ void executeThreeCmds(char *cmd[], char *cmd2[], char *cmd3[]) {
                 close(fd[3]);
                 exit(1);
             } else if (pid == 0) {
-                dup2(fd[2], 0);
+                dup2(fd[2], STDIN_FILENO);
                 close(fd[0]);
                 close(fd[1]);
                 close(fd[2]);
                 close(fd[3]);
                 execvp(*cmd3, cmd3);
+                exit(0);
             }
         }
     }
