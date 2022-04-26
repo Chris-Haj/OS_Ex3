@@ -12,27 +12,18 @@
 #define CD_LENGTH strlen(CD)
 #define EXIT_LENGTH strlen(EXIT)
 #define HISTORY_LENGTH strlen(HISTORY)
-
-
 #define PATH_LENGTH 100
 
 void loop();
-
 void checkInput(FILE *file, char *input, size_t i, int fromHistory);
-
 void counter(const char *line, size_t i);
-
 void readHistory(FILE *file);
-
 void cmdFromHistory(char *line);
-
 void cmdSplitter(const char *line, int pipeAmount, int *wordsAmount, const int *pipeIndexes);
-
-void executeOneCmd(char *cmd[]);
-
-void executeTwoCmds(char *cmd[], char *cmd2[]);
-
-void executeThreeCmds(char *cmd[], char *cmd2[], char *cmd3[]);
+void executeOneCmd(char **cmd[]);
+void executeTwoCmds(char **cmd[]);
+void executeThreeCmds(char **cmd[]);
+void freeCommands(char **cmd[], const int *words, int commandsAmnt);
 
 int numberOfCommands = 1;
 int numberOfPipes = 0;
@@ -42,12 +33,11 @@ int running = 1;
 int main() {
     loop();
     return 0;
-
 }
 
 void cmdSplitter(const char *line, int pipeAmount, int *wordsAmount, const int *pipeIndexes) {
     int i = 0;
-    int start = 0, end , index = 0;
+    int start = 0, end, index = 0;
     int cmdAmount = pipeAmount + 1;
     char **commands[cmdAmount];
     for (; i < cmdAmount; i++) {
@@ -57,15 +47,15 @@ void cmdSplitter(const char *line, int pipeAmount, int *wordsAmount, const int *
     i = 0;
     for (int c = 0; c < cmdAmount; c++) {
         for (; line[i] != '\n' && line[i] != '|'; i++) {
-            if (line[i] == ' ' || line[i + 1] == '\n' || line[i+1] == '|') {
+            if (line[i] == ' ' || line[i + 1] == '\n' || line[i + 1] == '|') {
                 end = i;
                 if (start > end)
                     end = i = start;
-                if (line[i + 1] == '\n'||(line[i+1]=='|'&&line[i]!=' '))
-                    end=i+1;
+                if (line[i + 1] == '\n' || (line[i + 1] == '|' && line[i] != ' '))
+                    end = i + 1;
                 int CurWordSize = (end - start);
-                if(CurWordSize!=0){
-                    commands[c][index] = (char *) calloc(CurWordSize+1, sizeof(char));
+                if (CurWordSize != 0) {
+                    commands[c][index] = (char *) calloc(CurWordSize + 1, sizeof(char));
                     if (!commands[c][index]) {
                         fprintf(stderr, "Error allocating memory!\n");
                     }
@@ -73,7 +63,7 @@ void cmdSplitter(const char *line, int pipeAmount, int *wordsAmount, const int *
 //                    printf("%s letter amount is %d, mem is %d index is %d array is %d\n",commands[c][index],end-start,CurWordSize+1,index,c);
                     index++;
                 }
-                start = end ;
+                start = end;
                 while (line[start] == ' ') start++;
 
                 if (line[start] == '\n' || line[start] == '|') {
@@ -82,128 +72,122 @@ void cmdSplitter(const char *line, int pipeAmount, int *wordsAmount, const int *
             }
         }
         if (c < pipeAmount)
-            i = pipeIndexes[c]+1;
-        while(line[i]== ' ')
+            i = pipeIndexes[c] + 1;
+        while (line[i] == ' ')
             i++;
-        start=i;
+        start = i;
         index = 0;
     }
     if (cmdAmount == 1)
-        executeOneCmd(commands[0]);
+        executeOneCmd(commands);
     else if (cmdAmount == 2) {
-        executeTwoCmds(commands[0], commands[1]);
-    }
-    else
-        executeThreeCmds(commands[0], commands[1], commands[2]);
-    for (i = 0; i < cmdAmount; i++) {
-        for (int j = 0; j < wordsAmount[i]; j++) {
-            free(commands[i][j]);
-        }
-        free(commands[i]);
+        executeTwoCmds(commands);
+    } else
+        executeThreeCmds(commands);
+    freeCommands(commands,wordsAmount,cmdAmount);
+}
+
+void freeCommands(char **cmd[], const int *words, int commandsAmnt) {
+    for(int i=0;i<commandsAmnt;i++) {
+        for (int j = 0; j < words[i]; j++)
+            free(cmd[i][j]);
+        free(cmd[i]);
     }
 }
 
-void executeOneCmd(char *cmd[]) {
+void executeOneCmd(char **cmd[]) {
     int status;
     pid_t pid = fork();
     if (pid == 0) {
-        if (-1 == execvp(*cmd, cmd))
+        if (-1 == execvp(*(cmd[0]), cmd[0])){
             perror("command unknown");
+            exit(1);
+        }
     }
     wait(&status);
 }
 
-void executeTwoCmds(char *cmd[], char *cmd2[]) {
+void executeTwoCmds(char **cmd[]) {
     int fd[2];
     pipe(fd);
     pid_t pid = fork();
     int status;
     if (pid == 0) {
         dup2(fd[1], 1);
-        close(fd[0]);
-        close(fd[1]);
-        execvp(*cmd, cmd);
+        if(close(fd[0])==-1 || close(fd[1])){
+            perror("close failure");
+            exit(1);
+        }
+        execvp(*cmd[0], cmd[0]);
         exit(0);
 
     } else {
         pid = fork();
         if (pid == 0) {
-            close(fd[1]);
             dup2(fd[0], 0);
-            execvp(*cmd2, cmd2);
-            close(fd[1]);
+            if(close(fd[0])==-1 || close(fd[1])){
+                perror("close failure");
+                exit(1);
+            }
+            execvp(*cmd[1], cmd[1]);
             exit(0);
         }
     }
-    close(fd[0]);
-    close(fd[1]);
+    if(close(fd[0])==-1 || close(fd[1])){
+        perror("close failure");
+        exit(1);
+    }
     wait(&status);
     wait(&status);
 }
 
-void executeThreeCmds(char *cmd[], char *cmd2[], char *cmd3[]) {
+void executeThreeCmds(char **cmd[]) {
     int fd[4];
     int status;
-    pipe(fd);
-    pipe(fd + 2);
+    if(pipe(fd)==-1||pipe(fd + 2)==-1){
+        perror("pipe failure");
+        exit(1);
+    }
     pid_t pid = fork();
     if (pid == -1) {
         perror("fork() error");
-        close(fd[0]);
-        close(fd[1]);
-        close(fd[2]);
-        close(fd[3]);
+        close(fd[0]); /*--*/ close(fd[1]); /*--*/ close(fd[2]);/*--*/close(fd[3]);
         exit(1);
     } else if (pid == 0) {
         dup2(fd[1], STDOUT_FILENO);
-        close(fd[0]);
-        close(fd[1]);
-        close(fd[2]);
-        close(fd[3]);
-        execvp(*cmd, cmd);
+        close(fd[0]); /*--*/ close(fd[1]); /*--*/ close(fd[2]);/*--*/close(fd[3]);
+        execvp(*cmd[0], cmd[0]);
         exit(0);
     } else {
         pid = fork();
         if (pid == -1) {
             perror("fork() error");
-            close(fd[0]);
-            close(fd[1]);
-            close(fd[2]);
-            close(fd[3]);
+            close(fd[0]); /*--*/ close(fd[1]); /*--*/ close(fd[2]);/*--*/close(fd[3]);
             exit(1);
         } else if (pid == 0) {
-            dup2(fd[0], STDIN_FILENO);
-            dup2(fd[3], STDOUT_FILENO);
-            close(fd[0]);
-            close(fd[1]);
-            close(fd[2]);
-            close(fd[3]);
-            execvp(*cmd2, cmd2);
+            if(dup2(fd[0], STDIN_FILENO)==-1||dup2(fd[3], STDOUT_FILENO)==-1){
+                perror("dup failure");
+                close(fd[0]); /*--*/ close(fd[1]); /*--*/ close(fd[2]);/*--*/close(fd[3]);
+                exit(1);
+            }
+            close(fd[0]); /*--*/ close(fd[1]); /*--*/ close(fd[2]);/*--*/close(fd[3]);
+            execvp(*cmd[1], cmd[1]);
             exit(0);
         } else {
             pid = fork();
             if (pid == -1) {
                 perror("fork() error");
-                close(fd[0]);
-                close(fd[1]);
-                close(fd[2]);
-                close(fd[3]);
+                close(fd[0]); /*--*/ close(fd[1]); /*--*/ close(fd[2]);/*--*/close(fd[3]);
                 exit(1);
             } else if (pid == 0) {
                 dup2(fd[2], STDIN_FILENO);
-                close(fd[0]);
-                close(fd[1]);
-                close(fd[2]);
-                close(fd[3]);
-                execvp(*cmd3, cmd3);
+                close(fd[0]); /**/ close(fd[1]); /*--*/ close(fd[2]);/*--*/close(fd[3]);
+                execvp(*cmd[2], cmd[2]);
                 exit(0);
             }
         }
     }
-    close(fd[0]);
-    close(fd[1]);
-    close(fd[2]);
-    close(fd[3]);
+    close(fd[0]); /*--*/ close(fd[1]); /*--*/ close(fd[2]);/*--*/close(fd[3]);
     for (int i = 0; i < 3; i++)
         wait(&status);
 }
@@ -332,7 +316,6 @@ void cmdFromHistory(char *line) {
     fclose(file);
 }
 
-
 //the readHistory function is simple function used to reopen the file in read mode and pass through all lines in the file while printing them to the terminal.
 void readHistory(FILE *file) {
     rewind(file);
@@ -344,15 +327,3 @@ void readHistory(FILE *file) {
     } else
         fprintf(stderr, "Error receiving file from function");
 }
-
-/*
-* after setting up the argv array the fork function is called and the array is sent to the execvp function in the child program, which processes the array as
-* if the input was entered in a linux shell
-*/
-
-
-/*
- * receive char array
- * create array of the same size as the amount of words
- * put each word in an index
-*/
