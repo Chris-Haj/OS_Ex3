@@ -20,9 +20,9 @@ void counter(const char *line, size_t i);
 void readHistory(FILE *file);
 void cmdFromHistory(char *line);
 void cmdSplitter(const char *line, int pipeAmount, int *wordsAmount, const int *pipeIndexes);
-void executeOneCmd(char **cmd[]);
-void executeTwoCmds(char **cmd[]);
-void executeThreeCmds(char **cmd[]);
+void executeOneCmd(char **cmd[], int *words);
+void executeTwoCmds(char **cmd[], int *words);
+void executeThreeCmds(char **cmd[], int *words);
 void freeCommands(char **cmd[], const int *words, int commandsAmnt);
 
 int numberOfCommands = 1;
@@ -79,69 +79,115 @@ void cmdSplitter(const char *line, int pipeAmount, int *wordsAmount, const int *
         index = 0;
     }
     if (cmdAmount == 1)
-        executeOneCmd(commands);
+        executeOneCmd(commands, wordsAmount);
     else if (cmdAmount == 2) {
-        executeTwoCmds(commands);
+        executeTwoCmds(commands, wordsAmount);
     } else
-        executeThreeCmds(commands);
+        executeThreeCmds(commands, wordsAmount);
     freeCommands(commands,wordsAmount,cmdAmount);
 }
 
 void freeCommands(char **cmd[], const int *words, int commandsAmnt) {
     for(int i=0;i<commandsAmnt;i++) {
-        for (int j = 0; j < words[i]; j++)
-            free(cmd[i][j]);
-        free(cmd[i]);
+        for (int j = 0; j < words[i]; j++){
+            if(!cmd[i][j])
+                free(cmd[i][j]);
+        }
+        if(!cmd[i])
+            free(cmd[i]);
     }
 }
 
-void executeOneCmd(char **cmd[]) {
+void executeOneCmd(char **cmd[], int *words) {
     int status;
     pid_t pid = fork();
-    if (pid == 0) {
+    if(pid == -1){
+        perror("fork failure");
+        freeCommands(cmd,words,2);
+        exit(1);
+    }
+    else if (pid == 0) {
         if (-1 == execvp(*(cmd[0]), cmd[0])){
-            perror("command unknown");
+            perror("command not found");
+            freeCommands(cmd,words,1);
             exit(1);
         }
     }
     wait(&status);
 }
 
-void executeTwoCmds(char **cmd[]) {
+void executeTwoCmds(char **cmd[], int *words) {
     int fd[2];
-    pipe(fd);
-    pid_t pid = fork();
     int status;
-    if (pid == 0) {
-        dup2(fd[1], 1);
-        if(close(fd[0])==-1 || close(fd[1])){
-            perror("close failure");
+    if(pipe(fd)==-1){
+        perror("pipe failure");
+        freeCommands(cmd,words,2);
+        exit(1);
+    }
+    pid_t pid = fork();
+    if(pid == -1){
+        perror("fork failure");
+        close(fd[0]); /*--*/ close(fd[1]);
+        freeCommands(cmd,words,2);
+        exit(1);
+    }
+    else if (pid == 0) {
+        if(dup2(fd[1], 1)==-1){
+            perror("dup failure");
+            close(fd[0]); /*--*/ close(fd[1]);
+            freeCommands(cmd,words,2);
             exit(1);
         }
-        execvp(*cmd[0], cmd[0]);
+        if(close(fd[0])==-1 || close(fd[1])){
+            perror("close failure");
+            freeCommands(cmd,words,2);
+            exit(1);
+        }
+        if(execvp(*cmd[0], cmd[0])==-1){
+            perror("command not found");
+            freeCommands(cmd,words,2);
+            exit(1);
+        }
         exit(0);
-
-    } else {
+    }
+    else {
         pid = fork();
-        if (pid == 0) {
-            dup2(fd[0], 0);
-            if(close(fd[0])==-1 || close(fd[1])){
-                perror("close failure");
+        if(pid == -1 ){
+            perror("fork failure");
+            close(fd[0]); /*--*/ close(fd[1]);
+            freeCommands(cmd,words,2);
+            exit(1);
+        }
+        else if (pid == 0) {
+            if(dup2(fd[0], 0)==-1){
+                perror("dup failure");
+                close(fd[0]); /*--*/ close(fd[1]);
+                freeCommands(cmd,words,2);
                 exit(1);
             }
-            execvp(*cmd[1], cmd[1]);
+            if(close(fd[0])==-1 || close(fd[1])){
+                perror("close failure");
+                freeCommands(cmd,words,2);
+                exit(1);
+            }
+            if(execvp(*cmd[1], cmd[1])==-1){
+                perror("command not found");
+                freeCommands(cmd,words,2);
+                exit(1);
+            }
             exit(0);
         }
     }
     if(close(fd[0])==-1 || close(fd[1])){
         perror("close failure");
+        freeCommands(cmd,words,2);
         exit(1);
     }
     wait(&status);
     wait(&status);
 }
 
-void executeThreeCmds(char **cmd[]) {
+void executeThreeCmds(char **cmd[], int *words) {
     int fd[4];
     int status;
     if(pipe(fd)==-1||pipe(fd + 2)==-1){
@@ -152,11 +198,24 @@ void executeThreeCmds(char **cmd[]) {
     if (pid == -1) {
         perror("fork() error");
         close(fd[0]); /*--*/ close(fd[1]); /*--*/ close(fd[2]);/*--*/close(fd[3]);
+        freeCommands(cmd,words,2);
         exit(1);
     } else if (pid == 0) {
-        dup2(fd[1], STDOUT_FILENO);
-        close(fd[0]); /*--*/ close(fd[1]); /*--*/ close(fd[2]);/*--*/close(fd[3]);
-        execvp(*cmd[0], cmd[0]);
+        if(dup2(fd[1], STDOUT_FILENO)==-1){
+            perror("dup failure");
+            freeCommands(cmd,words,3);
+            exit(1);
+        }
+        if(close(fd[0])||close(fd[1]) ||close(fd[2])||close(fd[3])){
+            perror("close failure");
+            freeCommands(cmd,words,3);
+            exit(1);
+        }
+        if(execvp(*cmd[0], cmd[0])==-1){
+            perror("command not found");
+            freeCommands(cmd,words,3);
+            exit(1);
+        }
         exit(0);
     } else {
         pid = fork();
@@ -170,24 +229,46 @@ void executeThreeCmds(char **cmd[]) {
                 close(fd[0]); /*--*/ close(fd[1]); /*--*/ close(fd[2]);/*--*/close(fd[3]);
                 exit(1);
             }
-            close(fd[0]); /*--*/ close(fd[1]); /*--*/ close(fd[2]);/*--*/close(fd[3]);
-            execvp(*cmd[1], cmd[1]);
+            if(close(fd[0])||close(fd[1]) ||close(fd[2])||close(fd[3])){
+                perror("close failure");
+                freeCommands(cmd,words,3);
+                exit(1);
+            }
+            if(execvp(*cmd[1], cmd[1])==-1){
+                perror("command not found");
+                exit(1);
+            }
             exit(0);
         } else {
             pid = fork();
             if (pid == -1) {
                 perror("fork() error");
+                freeCommands(cmd,words,3);
                 close(fd[0]); /*--*/ close(fd[1]); /*--*/ close(fd[2]);/*--*/close(fd[3]);
                 exit(1);
             } else if (pid == 0) {
-                dup2(fd[2], STDIN_FILENO);
-                close(fd[0]); /**/ close(fd[1]); /*--*/ close(fd[2]);/*--*/close(fd[3]);
-                execvp(*cmd[2], cmd[2]);
+                if(dup2(fd[2], STDIN_FILENO)==-1){
+                    if(close(fd[0])||close(fd[1]) ||close(fd[2])||close(fd[3]))
+                        perror("close failure");
+                    freeCommands(cmd,words,3);
+                    exit(1);
+                }
+                if(close(fd[0])||close(fd[1]) ||close(fd[2])||close(fd[3])){
+                    perror("close failure");
+                    freeCommands(cmd,words,3);
+                    exit(1);
+                }
+                if(execvp(*cmd[2], cmd[2])==-1)
+                    perror("command not found");
                 exit(0);
             }
         }
     }
-    close(fd[0]); /*--*/ close(fd[1]); /*--*/ close(fd[2]);/*--*/close(fd[3]);
+    if(close(fd[0])||close(fd[1]) ||close(fd[2])||close(fd[3])){
+        perror("close failure");
+        freeCommands(cmd,words,3);
+        exit(1);
+    }
     for (int i = 0; i < 3; i++)
         wait(&status);
 }
