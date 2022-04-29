@@ -22,7 +22,7 @@ void counter(const char *line, size_t i);
 
 void readHistory(FILE *file);
 
-void cmdFromHistory(char *line, int *linesNum, int size, int max, int *pipeIndexes, int *beginningOfCmd);
+void cmdFromHistory(const char *line, const int *linesNum,const int size,const int max,const int *pipeIndexes,const int *beginningOfCmd);
 
 void cmdSplitter(const char *line, int pipeAmount, int *wordsAmount, const int *pipeIndexes);
 
@@ -68,14 +68,14 @@ int fromHistoryLineToCmd(char *line, size_t i) {
  * Function used to search for the specific command in the line number entered next to !
  * and execute it if the number entered is less or equal to than the total number of lines in the file
  */
-void cmdFromHistory(char *line, int *linesNum, int size, int max, int *pipeIndexes, int *beginningOfCmd) {
+void cmdFromHistory(const char *line, const int *linesNum,const int size,const int max, const int *pipeIndexes,const int *beginningOfCmd) {
     FILE *file = fopen(FILENAME, "r");
     char command[size][LENGTH];
     char curLine[LENGTH];
     for(int c = 0;c<size;c++) {
         if (linesNum[c] == -1) {
             if (pipeIndexes[c] != -1 && c < 2)
-                strncpy(command[c], &line[beginningOfCmd[c]], pipeIndexes[c]);
+                strncpy(command[c], &line[beginningOfCmd[c]], pipeIndexes[c] - beginningOfCmd[c]);
             else {
                 strcpy(command[c], &line[beginningOfCmd[c]]);
             }
