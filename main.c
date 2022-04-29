@@ -18,20 +18,58 @@ void loop();
 void checkInput(FILE *file, char *input, size_t i, int fromHistory);
 void counter(const char *line, size_t i);
 void readHistory(FILE *file);
-void cmdFromHistory(char *line);
+void cmdFromHistory(char *line, int linesNum, int size, int max);
 void cmdSplitter(const char *line, int pipeAmount, int *wordsAmount, const int *pipeIndexes);
 void executeOneCmd(char **cmd[], int *words);
 void executeTwoCmds(char **cmd[], int *words);
 void executeThreeCmds(char **cmd[], int *words);
 void freeCommands(char **cmd[], const int *words, int commandsAmnt);
+void fromHistoryLineToCmd(char *line, size_t i);
 
+void fromHistoryLineToCmd(char *line, size_t i) {
+    int historyLines[] = {-1,-1,-1};
+    int indexs[]={-1,-1,-1};
+    int max=-1, cur=0;
+    while(line[i]!='\n'){
+        if(line[i]=='!'){
+            i++;
+            historyLines[cur]= atoi(&line[i]);
+            max = max > historyLines[cur] ? max : historyLines[cur];
+            indexs
+        }
+        i++;
+    }
+    printf("%d",max);
+}
+/*
+ * Function used to search for the specific command in the line number entered next to !
+ * and execute it if the number entered is less or equal to than the total number of lines in the file
+ */
+void cmdFromHistory(char *line, int linesNum, int size, int max) {
+    FILE *file = fopen(FILENAME, "r");
+    char command[size][LENGTH];
+    int cur = 0,index = 0 ;
+    while (cur < max && fgets(command, LENGTH, file)) {
+        cur++;
+    }
+    if (cur < max) {
+        fprintf(stderr, "Number of line does not exist yet!\n");
+        return;
+    }
+
+    checkInput(file, command, 0, 1);
+    fclose(file);
+}
 int numberOfCommands = 1;
 int numberOfPipes = 0;
 int totalNumberOfWords = 0;
 int running = 1;
 
 int main() {
-    loop();
+//    loop();
+    char *tes="!532 | !9000 | !3000\n";
+    size_t i=0;
+    fromHistoryLineToCmd(tes,i);
     return 0;
 }
 
@@ -307,7 +345,7 @@ void loop() {
                 fprintf(stderr, "Please enter only numbers after the ! to execute a past command\n");
             } else {
                 fclose(file);
-                cmdFromHistory(&input[1]);
+                cmdFromHistory(&input[1], 0, 0, 0);
                 file = fopen(FILENAME, "a+");
             }
             continue;
@@ -374,27 +412,6 @@ void counter(const char *line, size_t i) {
     for (int c = 0; c < curPipe + 1; c++)
         totalNumberOfWords += wordsAmount[c];
     cmdSplitter(line, curPipe, wordsAmount, pipeIdx);
-}
-
-/*
- * Function used to search for the specific command in the line number entered next to !
- * and execute it if the number entered is less or equal to than the total number of lines in the file
- */
-void cmdFromHistory(char *line) {
-    FILE *file = fopen(FILENAME, "r");
-    char command[LENGTH];
-    int lineNumber = (int) strtol(line, NULL, 10);
-    int cur = 0;
-    while (cur < lineNumber && fgets(command, LENGTH, file)) {
-        cur++;
-    }
-    if (cur < lineNumber) {
-        fprintf(stderr, "Number of line does not exist yet!\n");
-        return;
-    }
-    printf("%s", command);
-    checkInput(file, command, 0, 1);
-    fclose(file);
 }
 
 //the readHistory function is simple function used to reopen the file in read mode and pass through all lines in the file while printing them to the terminal.
