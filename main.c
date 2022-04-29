@@ -15,51 +15,82 @@
 #define PATH_LENGTH 100
 
 void loop();
-void checkInput(FILE *file, char *input, size_t i, int fromHistory);
-void counter(const char *line, size_t i);
-void readHistory(FILE *file);
-void cmdFromHistory(char *line, int linesNum, int size, int max);
-void cmdSplitter(const char *line, int pipeAmount, int *wordsAmount, const int *pipeIndexes);
-void executeOneCmd(char **cmd[], int *words);
-void executeTwoCmds(char **cmd[], int *words);
-void executeThreeCmds(char **cmd[], int *words);
-void freeCommands(char **cmd[], const int *words, int commandsAmnt);
-void fromHistoryLineToCmd(char *line, size_t i);
 
-void fromHistoryLineToCmd(char *line, size_t i) {
-    int historyLines[] = {-1,-1,-1};
-    int indexs[]={-1,-1,-1};
-    int max=-1, cur=0;
-    while(line[i]!='\n'){
-        if(line[i]=='!'){
+void checkInput(FILE *file, char *input, size_t i, int fromHistory);
+
+void counter(const char *line, size_t i);
+
+void readHistory(FILE *file);
+
+void cmdFromHistory(char *line, int *linesNum, int size, int max, int *pipeIndexes, int *beginningOfCmd);
+
+void cmdSplitter(const char *line, int pipeAmount, int *wordsAmount, const int *pipeIndexes);
+
+void executeOneCmd(char **cmd[], int *words);
+
+void executeTwoCmds(char **cmd[], int *words);
+
+void executeThreeCmds(char **cmd[], int *words);
+
+void freeCommands(char **cmd[], const int *words, int commandsAmnt);
+
+int fromHistoryLineToCmd(char *line, size_t i);
+
+int fromHistoryLineToCmd(char *line, size_t i) {
+    int historyLines[] = {-1, -1, -1};
+    int beginningOfCmd[]= {0,-1,-1};
+    int indexs[] = {-1, -1};
+    int max = -1, cur = 0;
+    while (line[i] != '\n') {
+        if (line[i] == '!') {
             i++;
-            historyLines[cur]= atoi(&line[i]);
+            historyLines[cur] = atoi(&line[i]);
             max = max > historyLines[cur] ? max : historyLines[cur];
-            indexs
+        } else if (line[i] == '|') {
+            indexs[cur] = (int)(i + 1);
+            cur++;
+            int c = (int)(i + 1);
+            while(line[c++]!=' ');
+                beginningOfCmd[cur]=c;
         }
         i++;
     }
-    printf("%d",max);
+    if(historyLines[0]==-1&&historyLines[1]==-1&&historyLines[2]==-1)
+        return 0;
+    else if(cur>2)
+        return 1;
+    else{
+        cmdFromHistory(line, historyLines, cur + 1, max, indexs, beginningOfCmd);
+        return 0;
+    }
 }
 /*
  * Function used to search for the specific command in the line number entered next to !
  * and execute it if the number entered is less or equal to than the total number of lines in the file
  */
-void cmdFromHistory(char *line, int linesNum, int size, int max) {
+void cmdFromHistory(char *line, int *linesNum, int size, int max, int *pipeIndexes, int *beginningOfCmd) {
     FILE *file = fopen(FILENAME, "r");
     char command[size][LENGTH];
-    int cur = 0,index = 0 ;
-    while (cur < max && fgets(command, LENGTH, file)) {
-        cur++;
-    }
-    if (cur < max) {
-        fprintf(stderr, "Number of line does not exist yet!\n");
-        return;
+    char curLine[LENGTH];
+    for(int c = 0;c<size;c++) {
+        if (linesNum[c] == -1) {
+            if (pipeIndexes[c] != -1 && c < 2)
+                strncpy(command[c], &line[beginningOfCmd[c]], pipeIndexes[c]);
+            else {
+                strcpy(command[c], &line[beginningOfCmd[c]]);
+            }
+        }
     }
 
-    checkInput(file, command, 0, 1);
+    strcpy(curLine,"");
+    if(size==1){
+//        sprintf()
+    }
+
+    checkInput(file, curLine, 0, 1);
     fclose(file);
 }
+
 int numberOfCommands = 1;
 int numberOfPipes = 0;
 int totalNumberOfWords = 0;
@@ -67,9 +98,13 @@ int running = 1;
 
 int main() {
 //    loop();
-    char *tes="!532 | !9000 | !3000\n";
-    size_t i=0;
-    fromHistoryLineToCmd(tes,i);
+    char *tes = "hey | !13\n";
+    char *sp = "       4  ";
+    size_t i = 0;
+    while(sp[i++]==' ');
+    printf("%d",i);
+//    fromHistoryLineToCmd(tes, i);
+
     return 0;
 }
 
@@ -122,16 +157,16 @@ void cmdSplitter(const char *line, int pipeAmount, int *wordsAmount, const int *
         executeTwoCmds(commands, wordsAmount);
     } else
         executeThreeCmds(commands, wordsAmount);
-    freeCommands(commands,wordsAmount,cmdAmount);
+    freeCommands(commands, wordsAmount, cmdAmount);
 }
 
 void freeCommands(char **cmd[], const int *words, int commandsAmnt) {
-    for(int i=0;i<commandsAmnt;i++) {
-        for (int j = 0; j < words[i]; j++){
-            if(!cmd[i][j])
+    for (int i = 0; i < commandsAmnt; i++) {
+        for (int j = 0; j < words[i]; j++) {
+            if (!cmd[i][j])
                 free(cmd[i][j]);
         }
-        if(!cmd[i])
+        if (!cmd[i])
             free(cmd[i]);
     }
 }
@@ -139,15 +174,14 @@ void freeCommands(char **cmd[], const int *words, int commandsAmnt) {
 void executeOneCmd(char **cmd[], int *words) {
     int status;
     pid_t pid = fork();
-    if(pid == -1){
+    if (pid == -1) {
         perror("fork failure");
-        freeCommands(cmd,words,2);
+        freeCommands(cmd, words, 2);
         exit(1);
-    }
-    else if (pid == 0) {
-        if (-1 == execvp(*(cmd[0]), cmd[0])){
+    } else if (pid == 0) {
+        if (-1 == execvp(*(cmd[0]), cmd[0])) {
             perror("command not found");
-            freeCommands(cmd,words,1);
+            freeCommands(cmd, words, 1);
             exit(1);
         }
     }
@@ -157,68 +191,65 @@ void executeOneCmd(char **cmd[], int *words) {
 void executeTwoCmds(char **cmd[], int *words) {
     int fd[2];
     int status;
-    if(pipe(fd)==-1){
+    if (pipe(fd) == -1) {
         perror("pipe failure");
-        freeCommands(cmd,words,2);
+        freeCommands(cmd, words, 2);
         exit(1);
     }
     pid_t pid = fork();
-    if(pid == -1){
+    if (pid == -1) {
         perror("fork failure");
         close(fd[0]); /*--*/ close(fd[1]);
-        freeCommands(cmd,words,2);
+        freeCommands(cmd, words, 2);
         exit(1);
-    }
-    else if (pid == 0) {
-        if(dup2(fd[1], 1)==-1){
+    } else if (pid == 0) {
+        if (dup2(fd[1], 1) == -1) {
             perror("dup failure");
             close(fd[0]); /*--*/ close(fd[1]);
-            freeCommands(cmd,words,2);
+            freeCommands(cmd, words, 2);
             exit(1);
         }
-        if(close(fd[0])==-1 || close(fd[1])){
+        if (close(fd[0]) == -1 || close(fd[1])) {
             perror("close failure");
-            freeCommands(cmd,words,2);
+            freeCommands(cmd, words, 2);
             exit(1);
         }
-        if(execvp(*cmd[0], cmd[0])==-1){
+        if (execvp(*cmd[0], cmd[0]) == -1) {
             perror("command not found");
-            freeCommands(cmd,words,2);
+            freeCommands(cmd, words, 2);
             exit(1);
         }
         exit(0);
-    }
-    else {
+    } else {
         pid = fork();
-        if(pid == -1 ){
+        if (pid == -1) {
             perror("fork failure");
             close(fd[0]); /*--*/ close(fd[1]);
-            freeCommands(cmd,words,2);
+            freeCommands(cmd, words, 2);
             exit(1);
-        }
-        else if (pid == 0) {
-            if(dup2(fd[0], 0)==-1){
+        } else if (pid == 0) {
+            if (dup2(fd[0], 0) == -1) {
                 perror("dup failure");
                 close(fd[0]); /*--*/ close(fd[1]);
-                freeCommands(cmd,words,2);
+                freeCommands(cmd, words, 2);
                 exit(1);
             }
-            if(close(fd[0])==-1 || close(fd[1])){
+            if (close(fd[0]) == -1 || close(fd[1])) {
                 perror("close failure");
-                freeCommands(cmd,words,2);
+                freeCommands(cmd, words, 2);
                 exit(1);
             }
-            if(execvp(*cmd[1], cmd[1])==-1){
+            if (execvp(*cmd[1], cmd[1]) == -1) {
                 perror("command not found");
-                freeCommands(cmd,words,2);
+                freeCommands(cmd, words, 2);
                 exit(1);
             }
             exit(0);
         }
     }
-    if(close(fd[0])==-1 || close(fd[1])){
+    if (close(fd[0]) == -1 || close(fd[1])) {
         perror("close failure");
-        freeCommands(cmd,words,2);
+        freeCommands(cmd, words, 2);
         exit(1);
     }
     wait(&status);
@@ -228,7 +259,7 @@ void executeTwoCmds(char **cmd[], int *words) {
 void executeThreeCmds(char **cmd[], int *words) {
     int fd[4];
     int status;
-    if(pipe(fd)==-1||pipe(fd + 2)==-1){
+    if (pipe(fd) == -1 || pipe(fd + 2) == -1) {
         perror("pipe failure");
         exit(1);
     }
@@ -236,22 +267,22 @@ void executeThreeCmds(char **cmd[], int *words) {
     if (pid == -1) {
         perror("fork() error");
         close(fd[0]); /*--*/ close(fd[1]); /*--*/ close(fd[2]);/*--*/close(fd[3]);
-        freeCommands(cmd,words,2);
+        freeCommands(cmd, words, 2);
         exit(1);
     } else if (pid == 0) {
-        if(dup2(fd[1], STDOUT_FILENO)==-1){
+        if (dup2(fd[1], STDOUT_FILENO) == -1) {
             perror("dup failure");
-            freeCommands(cmd,words,3);
+            freeCommands(cmd, words, 3);
             exit(1);
         }
-        if(close(fd[0])||close(fd[1]) ||close(fd[2])||close(fd[3])){
+        if (close(fd[0]) || close(fd[1]) || close(fd[2]) || close(fd[3])) {
             perror("close failure");
-            freeCommands(cmd,words,3);
+            freeCommands(cmd, words, 3);
             exit(1);
         }
-        if(execvp(*cmd[0], cmd[0])==-1){
+        if (execvp(*cmd[0], cmd[0]) == -1) {
             perror("command not found");
-            freeCommands(cmd,words,3);
+            freeCommands(cmd, words, 3);
             exit(1);
         }
         exit(0);
@@ -262,17 +293,17 @@ void executeThreeCmds(char **cmd[], int *words) {
             close(fd[0]); /*--*/ close(fd[1]); /*--*/ close(fd[2]);/*--*/close(fd[3]);
             exit(1);
         } else if (pid == 0) {
-            if(dup2(fd[0], STDIN_FILENO)==-1||dup2(fd[3], STDOUT_FILENO)==-1){
+            if (dup2(fd[0], STDIN_FILENO) == -1 || dup2(fd[3], STDOUT_FILENO) == -1) {
                 perror("dup failure");
                 close(fd[0]); /*--*/ close(fd[1]); /*--*/ close(fd[2]);/*--*/close(fd[3]);
                 exit(1);
             }
-            if(close(fd[0])||close(fd[1]) ||close(fd[2])||close(fd[3])){
+            if (close(fd[0]) || close(fd[1]) || close(fd[2]) || close(fd[3])) {
                 perror("close failure");
-                freeCommands(cmd,words,3);
+                freeCommands(cmd, words, 3);
                 exit(1);
             }
-            if(execvp(*cmd[1], cmd[1])==-1){
+            if (execvp(*cmd[1], cmd[1]) == -1) {
                 perror("command not found");
                 exit(1);
             }
@@ -281,30 +312,30 @@ void executeThreeCmds(char **cmd[], int *words) {
             pid = fork();
             if (pid == -1) {
                 perror("fork() error");
-                freeCommands(cmd,words,3);
+                freeCommands(cmd, words, 3);
                 close(fd[0]); /*--*/ close(fd[1]); /*--*/ close(fd[2]);/*--*/close(fd[3]);
                 exit(1);
             } else if (pid == 0) {
-                if(dup2(fd[2], STDIN_FILENO)==-1){
-                    if(close(fd[0])||close(fd[1]) ||close(fd[2])||close(fd[3]))
+                if (dup2(fd[2], STDIN_FILENO) == -1) {
+                    if (close(fd[0]) || close(fd[1]) || close(fd[2]) || close(fd[3]))
                         perror("close failure");
-                    freeCommands(cmd,words,3);
+                    freeCommands(cmd, words, 3);
                     exit(1);
                 }
-                if(close(fd[0])||close(fd[1]) ||close(fd[2])||close(fd[3])){
+                if (close(fd[0]) || close(fd[1]) || close(fd[2]) || close(fd[3])) {
                     perror("close failure");
-                    freeCommands(cmd,words,3);
+                    freeCommands(cmd, words, 3);
                     exit(1);
                 }
-                if(execvp(*cmd[2], cmd[2])==-1)
+                if (execvp(*cmd[2], cmd[2]) == -1)
                     perror("command not found");
                 exit(0);
             }
         }
     }
-    if(close(fd[0])||close(fd[1]) ||close(fd[2])||close(fd[3])){
+    if (close(fd[0]) || close(fd[1]) || close(fd[2]) || close(fd[3])) {
         perror("close failure");
-        freeCommands(cmd,words,3);
+        freeCommands(cmd, words, 3);
         exit(1);
     }
     for (int i = 0; i < 3; i++)
@@ -345,7 +376,7 @@ void loop() {
                 fprintf(stderr, "Please enter only numbers after the ! to execute a past command\n");
             } else {
                 fclose(file);
-                cmdFromHistory(&input[1], 0, 0, 0);
+                cmdFromHistory(&input[1], 0, 0, 0, 0, 0);
                 file = fopen(FILENAME, "a+");
             }
             continue;
