@@ -22,7 +22,7 @@ void counter(const char *line, size_t i);
 
 void readHistory(FILE *file);
 
-int cmdFromHistory(const char *line, const int linesNum[], const int size, const int max, const int pipeIndexes[], const int beginningOfCmd[]);
+int cmdFromHistory(char *line, const int linesNum[], const int size, const int max, const int pipeIndexes[], const int beginningOfCmd[]);
 
 void cmdSplitter(const char *line, int pipeAmount, int *wordsAmount, const int *pipeIndexes);
 
@@ -42,18 +42,17 @@ int totalNumberOfWords = 0;
 int running = 1;
 
 int main() {
-//    loop();
-    char *tes = "hey | !13\n";
-    char *sp = "       4  ";
-    size_t i = 0;
-    while(sp[i++]==' ');
-    printf("%d",i);
-//    fromHistoryLineToCmd(tes, i);
+    loop();
 
+//    char tes[3][10]={"one","two","three"};
+//    char hello[100];
+//    sprintf(hello,"%s | %s | %s",tes[0],tes[1],tes[2]);
+//    printf("%s",hello);
     return 0;
 }
 
 int fromHistoryLineToCmd(char *line, size_t i) {
+    printf("entered History function\n");
     int historyLines[] = {-1, -1, -1};
     int beginningOfCmd[]= {0,0,0};
     int indexs[] = {-1, -1};
@@ -87,9 +86,11 @@ int fromHistoryLineToCmd(char *line, size_t i) {
  * Function used to search for the specific command in the line number entered next to !
  * and execute it if the number entered is less or equal to than the total number of lines in the file
  */
-int cmdFromHistory(const char *line, const int linesNum[], const int size, const int max, const int pipeIndexes[], const int beginningOfCmd[]) {
+int cmdFromHistory(char *line, const int linesNum[], const int size, const int max, const int pipeIndexes[], const int beginningOfCmd[]) {
     FILE *file = fopen(FILENAME, "r");
     char command[size][LENGTH];
+    for(int j=0;j<size;j++)
+        strcpy(command[j],"");
     char curLine[LENGTH];
     for(int c = 0;c<size;c++) {
         if (linesNum[c] == -1) {
@@ -100,10 +101,11 @@ int cmdFromHistory(const char *line, const int linesNum[], const int size, const
             }
         }
     }
-    int cur = 0;
-    while(fgets(curLine,LENGTH,file)&&cur<max) {
+    int cur = 1;
+    while(fgets(curLine,LENGTH,file)) {
         if(cur == linesNum[0]){
             strcpy(command[0],curLine);
+            printf("%s\n",command[0]);
         }
         else if(cur == linesNum[1]){
             strcpy(command[1],curLine);
@@ -112,6 +114,8 @@ int cmdFromHistory(const char *line, const int linesNum[], const int size, const
             strcpy(command[2],curLine);
         }
         cur++;
+        if (cur > max)
+            break;
     }
     fclose(file);
     if(cur<max){
@@ -119,14 +123,15 @@ int cmdFromHistory(const char *line, const int linesNum[], const int size, const
         return 1;
     }
     strcpy(curLine,"");
+
     if(size==1){
-        sprintf(curLine,"%s",command[0]);
+        sprintf(line,"%s",command[0]);
     }
     else if(size==2){
-        sprintf(curLine,"%s|%s",command[0],command[1]);
+        sprintf(line,"%s|%s",command[0],command[1]);
     }
     else{
-        sprintf(curLine,"%s|%s|%s",command[0],command[1],command[2]);
+        sprintf(line,"%s|%s|%s",command[0],command[1],command[2]);
     }
     return 0;
 }
@@ -395,10 +400,10 @@ void loop() {
             continue;
         }
         fopen(FILENAME,"a+");
+
         checkInput(file, input, i, 0);
     }
 }
-
 /*
  * checkInput is used to check what kind of command/input was passed through.
  * If one of the commands (done/history/cd) were entered with no other words then the program either terminates/prints out all previously entered commands, or a cd error
@@ -422,6 +427,7 @@ void checkInput(FILE *file, char *input, size_t i, int fromHistory) {
         counter(input, i);
         return;
     } else {
+        printf("command after parsing is : %s\n",input);
         counter(input, i);
     }
     fromHistory == 0 ? fprintf(file, "%s", input) : fprintf(file, "%s\n", input);
