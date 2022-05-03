@@ -9,6 +9,7 @@
 #define HISTORY "history"
 #define EXIT "done"
 #define CD "cd"
+#define NOHUP "nohup"
 #define CD_LENGTH strlen(CD)
 #define EXIT_LENGTH strlen(EXIT)
 #define HISTORY_LENGTH strlen(HISTORY)
@@ -16,15 +17,19 @@
 
 void loop();
 void checkInput(FILE *file, char *input, size_t i, int fromHistory);
-void counter(const char *line, size_t i);
+void counter(const char *line, size_t i, int background);
 void readHistory(FILE *file);
 int cmdFromHistory(char *line, const int linesNum[], int size, int max, const int pipeIndexes[], const int beginningOfCmd[]);
-void cmdSplitter(const char *line, int pipeAmount, int *wordsAmount, const int *pipeIndexes);
-void executeOneCmd(char **cmd[], int *words);
-void executeTwoCmds(char **cmd[], int *words);
-void executeThreeCmds(char **cmd[], int *words);
+void cmdSplitter(const char *line, int pipeAmount, int *wordsAmount, const int *pipeIndexes, int background);
+void executeOneCmd(char **cmd[], int *words, int background);
+void executeTwoCmds(char **cmd[], int *words, int background);
+void executeThreeCmds(char **cmd[], int *words, int background);
 void freeCommands(char **cmd[], const int *words, int commandsAmnt);
 int fromHistoryLineToCmd(char *line, size_t i);
+void handler(){
+    int status;
+    waitpid(-1,&status,WNOHANG);
+}
 
 int numberOfCommands = 1;
 int numberOfPipes = 0;
@@ -45,8 +50,8 @@ int fromHistoryLineToCmd(char *line, size_t i) {
         if (line[i] == '!') {
             i++;
             historyLines[cur] = atoi(&line[i]);
-            if(historyLines[cur]<1){
-                fprintf(stderr,"File starts from line number 1!\n");
+            if (historyLines[cur] < 1) {
+                fprintf(stderr, "File starts from line number 1!\n");
                 return 1;
             }
 
@@ -84,11 +89,10 @@ int cmdFromHistory(char *line, const int linesNum[], const int size, const int m
     char curLine[LENGTH];
     for (int c = 0; c < size; c++) {
         if (linesNum[c] == -1) {
-            if (pipeIndexes[c] != -1 && c < 2){
+            if (pipeIndexes[c] != -1 && c < 2) {
                 strncpy(command[c], &line[beginningOfCmd[c]], pipeIndexes[c] - beginningOfCmd[c] - 1);
-                command[c][pipeIndexes[c] - beginningOfCmd[c] - 1]='\0';
-            }
-            else {
+                command[c][pipeIndexes[c] - beginningOfCmd[c] - 1] = '\0';
+            } else {
                 strcpy(command[c], &line[beginningOfCmd[c]]);
             }
         }
@@ -97,13 +101,13 @@ int cmdFromHistory(char *line, const int linesNum[], const int size, const int m
     while (fgets(curLine, LENGTH, file)) {
         if (cur == linesNum[0]) {
             strcpy(command[0], curLine);
-            command[0][strlen(command[0])-1]='\0';
+            command[0][strlen(command[0]) - 1] = '\0';
         } else if (cur == linesNum[1]) {
             strcpy(command[1], curLine);
-            command[1][strlen(command[1])-1]='\0';
+            command[1][strlen(command[1]) - 1] = '\0';
         } else if (cur == linesNum[2]) {
             strcpy(command[2], curLine);
-            command[2][strlen(command[2])-1]='\0';
+            command[2][strlen(command[2]) - 1] = '\0';
         }
         cur++;
         if (cur > max)
@@ -115,29 +119,26 @@ int cmdFromHistory(char *line, const int linesNum[], const int size, const int m
         return 1;
     }
     strcpy(curLine, "");
-    printf("%s\n",command[0]);
-    printf("%s\n",command[1]);
-//    printf("%s\n",command[2]);
-    if(size==1){
-        sprintf(line,"%s\n",command[0]);
-    }
-    else if(size==2){
-        sprintf(line,"%s|%s\n",command[0],command[1]);
-    }
-    else{
-        sprintf(line,"%s|%s|%s\n",command[0],command[1],command[2]);
+    printf("%s\n", command[0]);
+    printf("%s\n", command[1]);
+    if (size == 1) {
+        sprintf(line, "%s\n", command[0]);
+    } else if (size == 2) {
+        sprintf(line, "%s|%s\n", command[0], command[1]);
+    } else {
+        sprintf(line, "%s|%s|%s\n", command[0], command[1], command[2]);
     }
     int counter = 0;
     for (int c = 0; line[c] != '\n'; c++)
         if (line[c] == '|')
             counter++;
-    if(counter > 2)
+    if (counter > 2)
         return 1;
     else
         return 0;
 }
 
-void cmdSplitter(const char *line, int pipeAmount, int *wordsAmount, const int *pipeIndexes) {
+void cmdSplitter(const char *line, int pipeAmount, int *wordsAmount, const int *pipeIndexes, int background) {
     int i = 0;
     int start = 0, end, index = 0;
     int cmdAmount = pipeAmount + 1;
@@ -180,11 +181,11 @@ void cmdSplitter(const char *line, int pipeAmount, int *wordsAmount, const int *
         index = 0;
     }
     if (cmdAmount == 1)
-        executeOneCmd(commands, wordsAmount);
+        executeOneCmd(commands, wordsAmount, background);
     else if (cmdAmount == 2) {
-        executeTwoCmds(commands, wordsAmount);
+        executeTwoCmds(commands, wordsAmount, background);
     } else
-        executeThreeCmds(commands, wordsAmount);
+        executeThreeCmds(commands, wordsAmount, background);
     freeCommands(commands, wordsAmount, cmdAmount);
 }
 
@@ -199,7 +200,7 @@ void freeCommands(char **cmd[], const int *words, int commandsAmnt) {
     }
 }
 
-void executeOneCmd(char **cmd[], int *words) {
+void executeOneCmd(char **cmd[], int *words, int background) {
     int status;
     pid_t pid = fork();
     if (pid == -1) {
@@ -207,16 +208,21 @@ void executeOneCmd(char **cmd[], int *words) {
         freeCommands(cmd, words, 2);
         exit(1);
     } else if (pid == 0) {
+        if(background==1)
+            printf("\n%d\n",getpid());
         if (-1 == execvp(*(cmd[0]), cmd[0])) {
             perror("command not found");
             freeCommands(cmd, words, 1);
             exit(1);
         }
     }
-    wait(&status);
+    if (background == 0)
+        wait(&status);
+    else
+        waitpid(-1, &status, WNOHANG);
 }
 
-void executeTwoCmds(char **cmd[], int *words) {
+void executeTwoCmds(char **cmd[], int *words, int background) {
     int fd[2];
     int status;
     if (pipe(fd) == -1) {
@@ -231,6 +237,8 @@ void executeTwoCmds(char **cmd[], int *words) {
         freeCommands(cmd, words, 2);
         exit(1);
     } else if (pid == 0) {
+        if(background==1)
+            printf("\n%d\n",getpid());
         if (dup2(fd[1], 1) == -1) {
             perror("dup failure");
             close(fd[0]); /*--*/ close(fd[1]);
@@ -280,11 +288,17 @@ void executeTwoCmds(char **cmd[], int *words) {
         freeCommands(cmd, words, 2);
         exit(1);
     }
-    wait(&status);
-    wait(&status);
+    if(background==0){
+        wait(&status);
+        wait(&status);
+    }
+    else{
+        waitpid(-1,&status,WNOHANG);
+        waitpid(-1,&status,WNOHANG);
+    }
 }
 
-void executeThreeCmds(char **cmd[], int *words) {
+void executeThreeCmds(char **cmd[], int *words, int background) {
     int fd[4];
     int status;
     if (pipe(fd) == -1 || pipe(fd + 2) == -1) {
@@ -298,6 +312,8 @@ void executeThreeCmds(char **cmd[], int *words) {
         freeCommands(cmd, words, 2);
         exit(1);
     } else if (pid == 0) {
+        if(background==1)
+            printf("\n%d\n",getpid());
         if (dup2(fd[1], STDOUT_FILENO) == -1) {
             perror("dup failure");
             freeCommands(cmd, words, 3);
@@ -366,12 +382,21 @@ void executeThreeCmds(char **cmd[], int *words) {
         freeCommands(cmd, words, 3);
         exit(1);
     }
-    for (int i = 0; i < 3; i++)
+    if(background==0){
         wait(&status);
+        wait(&status);
+        wait(&status);
+    }
+    else{
+        waitpid(-1,&status,0);
+        waitpid(-1,&status,0);
+        waitpid(-1,&status,WNOHANG);
+    }
 }
 
 //Main loop function to keep asking user for input and call other functions according to what is passed into the stdin stream
 void loop() {
+    signal(SIGCHLD,handler);
     char location[PATH_LENGTH];
     const char *const PATH = getcwd(location, PATH_LENGTH);
     FILE *file = fopen(FILENAME, "a+");
@@ -424,20 +449,40 @@ void checkInput(FILE *file, char *input, size_t i, int fromHistory) {
         return;
     } else if (strncmp(&input[i], CD, CD_LENGTH) == 0 && (input[CD_LENGTH] == ' ' || input[CD_LENGTH] == '\n')) {
         fprintf(stderr, "Command not supported yet!\n");
-        counter(input, i);
+        counter(input, i, 0);
         return;
-    } else {
-        counter(input, i);
+    } else if (input[strlen(input) - 2] == '&') {
+        fromHistory == 0 ? fprintf(file, "%s", input) : fprintf(file, "%s\n", input);
+        size_t j = strlen(input)-3;
+        while(input[j]==' ')
+            j--;
+        input[j+1]='\n';
+        input[j+2]='\0';
+        counter(input, i, 1);
     }
-    fromHistory == 0 ? fprintf(file, "%s", input) : fprintf(file, "%s\n", input);
+    else if(strncmp(input,NOHUP,strlen(NOHUP))==0){
+        fromHistory == 0 ? fprintf(file, "%s", input) : fprintf(file, "%s\n", input);
+        size_t j = strlen(NOHUP);
+        while(input[j]==' ') {
+            j++;
+        }
+        if(input[j]=='\n'){
+            fprintf(stderr,"nohup with no command is not valid input!\n");
+            return;
+        }
+        strcpy(input,&input[j]);
+        counter(input,i,2);
+    }
+    else {
+        counter(input, i, 0);
+        fromHistory == 0 ? fprintf(file, "%s", input) : fprintf(file, "%s\n", input);
+    }
 }
 
-/*
- * the counter function is used to count how many words are in the input and add it to the total
+/* the counter function is used to count how many words are in the input and add it to the total
  * number of words entered and incrementing total number of commands by 1.
  */
-
-void counter(const char *line, size_t i) {
+void counter(const char *line, size_t i, int background) {
     int wordsAmount[3] = {1, 1, 1};
     int pipeIdx[2] = {-1, -1};
     int curPipe = 0;
@@ -460,7 +505,7 @@ void counter(const char *line, size_t i) {
     numberOfCommands++;
     for (int c = 0; c < curPipe + 1; c++)
         totalNumberOfWords += wordsAmount[c];
-    cmdSplitter(line, curPipe, wordsAmount, pipeIdx);
+    cmdSplitter(line, curPipe, wordsAmount, pipeIdx, background);
 }
 
 //the readHistory function is simple function used to reopen the file in read mode and pass through all lines in the file while printing them to the terminal.
