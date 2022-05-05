@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <fcntl.h>
 
 #define LENGTH 514
 #define FILENAME "file.txt"
@@ -222,6 +223,11 @@ void freeCommands(char **cmd[], const int *words, int commandsAmnt) {
 }
 
 void executeOneCmd(char **cmd[], int *words, int background) {
+    int fd;
+
+    if(background==2){
+        signal(SIGHUP,SIG_IGN);
+    }
     int status;
     pid_t pid = fork();
     if (pid == -1) {
@@ -229,18 +235,26 @@ void executeOneCmd(char **cmd[], int *words, int background) {
         freeCommands(cmd, words, 2);
         exit(1);
     } else if (pid == 0) {
+        if(background==2){
+            fd = open("nohup.txt",O_WRONLY|O_CREAT|O_APPEND|S_IROTH|S_IRUSR|S_IWUSR|S_IRGRP);
+            dup2(fd,1);
+        }
         if (-1 == execvp(*(cmd[0]), cmd[0])) {
             perror("command not found");
             freeCommands(cmd, words, 1);
+            close(fd);
             exit(1);
         }
     }
+    if(background==2)
+        close(fd);
     //If the initial input was received normally with nohup and no ampersand then the father is told to wait the child
     if (background == 0)
         wait(&status);
 }
 
 void executeTwoCmds(char **cmd[], int *words, int background) {
+
     int fd[2];
     int status;
     if (pipe(fd) == -1) {
