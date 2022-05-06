@@ -21,7 +21,7 @@ void checkInput(FILE *file, char *input, size_t i, int fromHistory);
 void counter(const char *line, size_t i, int background);
 void readHistory(FILE *file);
 int cmdFromHistory(char *line, const int linesNum[], int size, int max, const int pipeIndexes[], const int beginningOfCmd[]);
-void cmdSplitter(const char *line, int pipeAmount, int *wordsAmount, const int *pipeIndexes, int background);
+void cmdSplitter(const char *line, int pipeAmount, int *wordsAmount, int background);
 void executeOneCmd(char **cmd[], int *words, int background);
 void executeTwoCmds(char **cmd[], int *words, int background);
 void executeThreeCmds(char **cmd[], int *words, int background);
@@ -51,8 +51,8 @@ int fromHistoryLineToCmd(char *line, size_t i) {
      * in historyLines is equal -1.
      */
     int historyLines[] = {-1, -1, -1};
-    int beginningOfCmd[] = {0, 0, 0};
     int indexes[] = {-1, -1};
+    int beginningOfCmd[] = {0, 0, 0};
     int max = -1, cur = 0;
     while (line[i] != '\n') {
         if (line[i] == '!') {
@@ -62,21 +62,23 @@ int fromHistoryLineToCmd(char *line, size_t i) {
                 fprintf(stderr, "File starts from line number 1!\n");
                 return 1;
             }
-
             max = max > historyLines[cur] ? max : historyLines[cur];
         } else if (line[i] == '|') {
-            indexes[cur] = (int) (i + 1);
+            indexes[cur] = (int) i;
             cur++;
             int c = (int) (i + 1);
-            while (line[c++] != ' ');
+            while (line[c] == ' ')
+                c++;
             beginningOfCmd[cur] = c;
         }
         i++;
+        while(line[i]==' ')
+            i++;
     }
     //If all commands were in normal word format then return 0 and do nothing to the input and continue normal execution
     if (historyLines[0] == -1 && historyLines[1] == -1 && historyLines[2] == -1)
         return 0;
-    //If we found more than 2 pipes than return 1 meaning input is not valid for execution.
+        //If we found more than 2 pipes than return 1 meaning input is not valid for execution.
     else if (cur > 2)
         return 1;
     else {
@@ -94,8 +96,6 @@ int fromHistoryLineToCmd(char *line, size_t i) {
 int cmdFromHistory(char *line, const int linesNum[], const int size, const int max, const int pipeIndexes[], const int beginningOfCmd[]) {
     FILE *file = fopen(FILENAME, "r");
     char command[size][LENGTH];
-    for (int j = 0; j < size; j++) //empty all strings
-        strcpy(command[j], "\0");
     char curLine[LENGTH];
     /*
      * Any command that was originally in the initial input in words format it which is indicated at by a -1 in the linesNum array index
@@ -133,7 +133,6 @@ int cmdFromHistory(char *line, const int linesNum[], const int size, const int m
         fprintf(stderr, "One of the numbers entered does not exist in the file yet\n");
         return 1;
     }
-    strcpy(curLine, "");
     printf("%s\n", command[0]);
     printf("%s\n", command[1]);
     //After reformatting the commands from !x to words they are combined again to be sent as a normal command to parse and execute
@@ -157,7 +156,7 @@ int cmdFromHistory(char *line, const int linesNum[], const int size, const int m
         return 0;
 }
 
-void cmdSplitter(const char *line, int pipeAmount, int *wordsAmount, const int *pipeIndexes, int background) {
+void cmdSplitter(const char *line, int pipeAmount, int *wordsAmount, int background) {
     int i = 0;
     int start = 0, end, index = 0;
     int cmdAmount = pipeAmount + 1;
@@ -171,32 +170,29 @@ void cmdSplitter(const char *line, int pipeAmount, int *wordsAmount, const int *
     /*Each array inside the commands[] array is allocated memory to copy each word of the current command in a separate index and after
      * reaching the end of a command which we know by finding a | then the next command is copied into the next array's indexes*/
     for (int c = 0; c < cmdAmount; c++) {
-        for (; line[i] != '\n' && line[i] != '|'; i++) {
+        while (line[i] != '\n' && line[i] != '|') {
             if (line[i] == ' ' || line[i + 1] == '\n' || line[i + 1] == '|') {
-                end = i;
-                if (start > end)
-                    end = i = start;
-                if (line[i + 1] == '\n' || (line[i + 1] == '|' && line[i] != ' '))
-                    end = i + 1;
-                int CurWordSize = (end - start);
-                if (CurWordSize != 0) {
-                    commands[c][index] = (char *) calloc(CurWordSize + 1, sizeof(char));
-                    if (!commands[c][index]) {
-                        fprintf(stderr, "Error allocating memory!\n");
-                    }
-                    strncpy(commands[c][index], &line[start], end - start);
-                    index++;
+                if(line[i + 1] == '\n' || line[i + 1] == '|'&&line[i]!=' ')
+                    i++;
+                end=i;
+                int CurWordSize = (end - start) + 1;
+                commands[c][index]= (char *) calloc(CurWordSize,sizeof(char));
+                if (!commands[c][index]) {
+                    fprintf(stderr, "Error allocating memory!\n");
+                    freeCommands(commands,wordsAmount,cmdAmount);
+                    exit(1);
                 }
-                start = end;
-                while (line[start] == ' ')
-                    start++;
-                if (line[start] == '\n' || line[start] == '|') {
+                strncpy(commands[c][index],&line[start],CurWordSize-1);
+                index++;
+                while(line[i]==' ')
+                    i++;
+                if(line[i]=='|'||line[i]=='\n')
                     break;
-                }
+                start=i;
             }
+            i++;
         }
-        if (c < pipeAmount)
-            i = pipeIndexes[c] + 1;
+        i++;
         while (line[i] == ' ')
             i++;
         start = i;
@@ -212,12 +208,13 @@ void cmdSplitter(const char *line, int pipeAmount, int *wordsAmount, const int *
 }
 
 void freeCommands(char **cmd[], const int *words, int commandsAmnt) {
-    for (int i = 0; i < commandsAmnt; i++) {
+    int i;
+    for (i = 0; i < commandsAmnt; i++) {
         for (int j = 0; j < words[i]; j++) {
-            if (!cmd[i][j])
+            if (cmd[i][j])
                 free(cmd[i][j]);
         }
-        if (!cmd[i])
+        if (cmd[i])
             free(cmd[i]);
     }
 }
@@ -452,7 +449,7 @@ void loop() {
             fprintf(stderr, "Error in input!\n");
             continue;
         }
-        fopen(FILENAME, "a+");
+        file = fopen(FILENAME, "a+");
         checkInput(file, input, i, 0);
     }
 }
@@ -544,7 +541,7 @@ void counter(const char *line, size_t i, int background) {
         numberOfCommands++;
         totalNumberOfWords += wordsAmount[c];
     }
-    cmdSplitter(line, curPipe, wordsAmount, pipeIdx, background);
+    cmdSplitter(line, curPipe, wordsAmount, background);
 }
 
 //the readHistory function is simple function used to reopen the file in read mode and pass through all lines in the file while printing them to the terminal.
