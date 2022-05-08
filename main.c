@@ -27,10 +27,11 @@ void executeTwoCmds(char **cmd[], int *words, int background);
 void executeThreeCmds(char **cmd[], int *words, int background);
 void freeCommands(char **cmd[], const int *words, int commandsAmnt);
 int fromHistoryLineToCmd(char *line, size_t i);
-void handler(int sig){
-    int stat=1;
-    while(stat!=-1&&stat!=0)
-        stat = waitpid(-1,&sig,WNOHANG);
+
+void handler(int sig) {
+    int stat = 1;
+    while (stat != -1 && stat != 0)
+        stat = waitpid(-1, &sig, WNOHANG);
 }
 
 int numberOfCommands = 1;
@@ -72,7 +73,7 @@ int fromHistoryLineToCmd(char *line, size_t i) {
             beginningOfCmd[cur] = c;
         }
         i++;
-        while(line[i]==' ')
+        while (line[i] == ' ')
             i++;
     }
     //If all commands were in normal word format then return 0 and do nothing to the input and continue normal execution
@@ -171,24 +172,44 @@ void cmdSplitter(const char *line, int pipeAmount, int *wordsAmount, int backgro
      * reaching the end of a command which we know by finding a | then the next command is copied into the next array's indexes*/
     for (int c = 0; c < cmdAmount; c++) {
         while (line[i] != '\n' && line[i] != '|') {
-            if (line[i] == ' ' || line[i + 1] == '\n' || line[i + 1] == '|') {
-                if(line[i + 1] == '\n' || line[i + 1] == '|'&&line[i]!=' ')
+            if (line[i] == '"') {
+                start = i + 1;
+                i++;
+                while (line[i] != '"')
                     i++;
-                end=i;
+                end = i;
                 int CurWordSize = (end - start) + 1;
-                commands[c][index]= (char *) calloc(CurWordSize,sizeof(char));
+                commands[c][index] = (char *) calloc(CurWordSize, sizeof(char));
                 if (!commands[c][index]) {
                     fprintf(stderr, "Error allocating memory!\n");
-                    freeCommands(commands,wordsAmount,cmdAmount);
+                    freeCommands(commands, wordsAmount, cmdAmount);
                     exit(1);
                 }
-                strncpy(commands[c][index],&line[start],CurWordSize-1);
+                strncpy(commands[c][index], &line[start], CurWordSize - 1);
                 index++;
-                while(line[i]==' ')
+                while (line[i + 1] == ' ')
                     i++;
-                if(line[i]=='|'||line[i]=='\n')
+                if (line[i] == '|' || line[i] == '\n')
                     break;
-                start=i;
+                start = i;
+            } else if (line[i] == ' ' || line[i + 1] == '\n' || line[i + 1] == '|') {
+                if (line[i + 1] == '\n' || line[i + 1] == '|' && line[i] != ' ')
+                    i++;
+                end = i;
+                int CurWordSize = (end - start) + 1;
+                commands[c][index] = (char *) calloc(CurWordSize, sizeof(char));
+                if (!commands[c][index]) {
+                    fprintf(stderr, "Error allocating memory!\n");
+                    freeCommands(commands, wordsAmount, cmdAmount);
+                    exit(1);
+                }
+                strncpy(commands[c][index], &line[start], CurWordSize - 1);
+                index++;
+                while (line[i + 1] == ' ')
+                    i++;
+                if (line[i] == '|' || line[i] == '\n')
+                    break;
+                start = i + 1;
             }
             i++;
         }
@@ -221,9 +242,11 @@ void freeCommands(char **cmd[], const int *words, int commandsAmnt) {
 
 void executeOneCmd(char **cmd[], int *words, int background) {
     int fd;
-
-    if(background==2){
-        signal(SIGHUP,SIG_IGN);
+    if (background == 2){
+        signal(SIGHUP, SIG_IGN);
+//        fd = open("nohup.txt", O_WRONLY | O_CREAT | O_APPEND, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)
+        if (-1 == (fd = open("nohup.txt", O_WRONLY | O_CREAT | O_APPEND, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)))
+            perror("open failure");
     }
     int status;
     pid_t pid = fork();
@@ -232,22 +255,24 @@ void executeOneCmd(char **cmd[], int *words, int background) {
         freeCommands(cmd, words, 2);
         exit(1);
     } else if (pid == 0) {
-        if(background==2){
-            fd = open("nohup.txt",O_WRONLY|O_CREAT|O_APPEND|S_IROTH|S_IRUSR|S_IWUSR|S_IRGRP);
-            dup2(fd,1);
+        if (background == 2) {
+            dup2(fd, STDOUT_FILENO);
         }
         if (-1 == execvp(*(cmd[0]), cmd[0])) {
             perror("command not found");
             freeCommands(cmd, words, 1);
-            close(fd);
+            if (background == 2)
+                close(fd);
             exit(1);
         }
     }
-    if(background==2)
-        close(fd);
-    //If the initial input was received normally with nohup and no ampersand then the father is told to wait the child
-    if (background == 0)
-        wait(&status);
+    else{
+        if(background==2)
+            close(fd);
+        //If the initial input was received normally with nohup and no ampersand then the father is told to wait the child
+        if (background == 0)
+            wait(&status);
+    }
 }
 
 void executeTwoCmds(char **cmd[], int *words, int background) {
@@ -316,8 +341,8 @@ void executeTwoCmds(char **cmd[], int *words, int background) {
         exit(1);
     }
     //If the initial input was received normally with nohup and no ampersand then the father is told to wait for the two children processes
-    if(background==0){
-        for(int i=0;i<2;i++)
+    if (background == 0) {
+        for (int i = 0; i < 2; i++)
             wait(&status);
     }
 }
@@ -410,8 +435,8 @@ void executeThreeCmds(char **cmd[], int *words, int background) {
         exit(1);
     }
     //If the initial input was received normally with nohup and no ampersand then the father is told to wait for all three children processes
-    if(background==0){
-        for(int i=0;i<3;i++)
+    if (background == 0) {
+        for (int i = 0; i < 3; i++)
             wait(&status);
     }
 }
@@ -421,7 +446,7 @@ void executeThreeCmds(char **cmd[], int *words, int background) {
  * while also checking if the input passed is valid
  * */
 void loop() {
-    signal(SIGCHLD,handler);
+    signal(SIGCHLD, handler);
     char location[PATH_LENGTH];
     const char *const PATH = getcwd(location, PATH_LENGTH);
     FILE *file = fopen(FILENAME, "a+");
@@ -481,32 +506,30 @@ void checkInput(FILE *file, char *input, size_t i, int fromHistory) {
     } else if (input[strlen(input) - 2] == '&') {
         fromHistory == 0 ? fprintf(file, "%s", input) : fprintf(file, "%s\n", input);
         //add the input received into the history file then remove the ampersand from input and any spaces before it
-        size_t j = strlen(input)-3;
-        while(input[j]==' ' && j>=0)
+        size_t j = strlen(input) - 3;
+        while (input[j] == ' ' && j >= 0)
             j--;
-        if(j==-1){
-            fprintf(stderr,"Input with only an ampersand is not valid!\n");
+        if (j == -1) {
+            fprintf(stderr, "Input with only an ampersand is not valid!\n");
             return;
         }
-        input[j+1]='\n';
-        input[j+2]='\0';
+        input[j + 1] = '\n';
+        input[j + 2] = '\0';
         counter(input, i, 1);
-    }
-    else if(strncmp(input,NOHUP,strlen(NOHUP))==0){
+    } else if (strncmp(input, NOHUP, strlen(NOHUP)) == 0) {
         fromHistory == 0 ? fprintf(file, "%s", input) : fprintf(file, "%s\n", input);
         //add the input received into the history file then remove the nohup from input and any spaces after it
         size_t j = strlen(NOHUP);
-        while(input[j]==' ') {
+        while (input[j] == ' ') {
             j++;
         }
-        if(input[j]=='\n'){
-            fprintf(stderr,"nohup with no command is not valid input!\n");
+        if (input[j] == '\n') {
+            fprintf(stderr, "nohup with no command is not valid input!\n");
             return;
         }
-        strcpy(input,&input[j]);
-        counter(input,i,2);
-    }
-    else {
+        strcpy(input, &input[j]);
+        counter(input, i, 2);
+    } else {
         counter(input, i, 0);
         fromHistory == 0 ? fprintf(file, "%s", input) : fprintf(file, "%s\n", input);
     }
@@ -517,33 +540,33 @@ void checkInput(FILE *file, char *input, size_t i, int fromHistory) {
  */
 void counter(const char *line, size_t i, int background) {
     int wordsAmount[3] = {1, 1, 1};
-    int pipeIdx[2] = {-1, -1};
     int curPipe = 0;
-    int j = 0;
     /*
      * this loop is used to calculate how many words each command seperated by a pipe '|' and also counts how many pipes
      * are in the input while also saving the index of each pipe */
     while (line[i] != '\n') {
-        if (line[i] == '|') {
-            pipeIdx[curPipe++] = (int) i;
-            j++;
+        if (line[i] == '"') {
+            i++;
+            while (line[i] != '"')
+                i++;
+        } else if (line[i] == '|') {
+            curPipe++;
             while (line[i + 1] == ' ')
                 i++;
         } else if (line[i] == ' ') {
             while (line[i + 1] == ' ')
                 i++;
             if (line[i + 1] != '|' && line[i + 1] != '\n')
-                wordsAmount[j]++;
+                wordsAmount[curPipe]++;
         }
         i++;
     }
-    for (int c = 0; c < curPipe + 1; c++){
+    for (int c = 0; c < curPipe + 1; c++) {
         numberOfCommands++;
         totalNumberOfWords += wordsAmount[c];
     }
     cmdSplitter(line, curPipe, wordsAmount, background);
 }
-
 //the readHistory function is simple function used to reopen the file in read mode and pass through all lines in the file while printing them to the terminal.
 void readHistory(FILE *file) {
     rewind(file);
